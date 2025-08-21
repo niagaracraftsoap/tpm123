@@ -1,4 +1,4 @@
-# tpm123
+# `tpm123`
 
 `tpm123` securely unseals TPM 1.2-sealed secrets at boot and writes them into per-user, tmpfs-based environment files under `/run/<user>/`.
 
