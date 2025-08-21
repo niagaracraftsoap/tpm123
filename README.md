@@ -68,7 +68,7 @@ To install:
 ## Requirements
 
 - TPM 1.2 hardware
-- `tpm_sealdata` and `tpm_unsealdata` (from `tpm-tools` / trousers)
+- `tpm_sealdata` and `tpm_unsealdata` (from `tpm-tools` / `trousers`)
 - GNU `base64` with `--wrap=0` support
 - Bash
 
