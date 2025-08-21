@@ -47,16 +47,15 @@ It is intended to run early at boot, before user services that may depend on the
 
 To install:
 
-1. Copy `unseal-blobs.sh` to `/usr/local/sbin/`
+1. Copy `tpm123` to `/usr/local/sbin/`
 2. Copy `tpm123-unseal.service` to `/etc/systemd/system/`
 3. Enable the service:
 
-```sh
-sudo systemctl daemon-reexec
-sudo systemctl enable tpm123-unseal.service
+```#> systemctl daemon-reexec
+#> systemctl enable tpm123-unseal.service
 ```
 
-4. Reboot to test.
+4. Reboot or run the service to create/unseal blobs.
 
 ## Security Notes
 
@@ -64,6 +63,7 @@ sudo systemctl enable tpm123-unseal.service
 - Secrets are never written to disk unencrypted.
 - Secrets exist only in `/run`, which is cleared on reboot.
 - Output files are `chmod 400` and `chown <user>:<user>` by default.
+- Uses the 'well-known' SRK password for `tpm_sealdata`.
 
 ## Requirements
 
