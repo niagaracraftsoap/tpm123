@@ -16,9 +16,6 @@ DefaultDependencies=yes
 Type=oneshot
 Environment=PATH=/usr/bin:/bin
 
-# Create intermediate directory (if needed)
-ExecStartPre=/usr/bin/install -d -m 0711 -o root -g root /run/unsealed
-
 # Main script
 ExecStart=/usr/local/sbin/tpm123
 
