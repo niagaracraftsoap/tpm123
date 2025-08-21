@@ -35,9 +35,10 @@ Blob files must be located in `/etc/blobs/` and named with the following pattern
 /etc/blobs/<username>_<envarname>.blob
 ```
 
-- Example: `/etc/blobs/alice_APP_SECRET.blob`
 - The `<username>` must correspond to an existing local user.
 - The `<envarname>` is converted to uppercase and sanitized into a valid environment variable name.
+
+- Example: `/etc/blobs/alice_my_secret.blob`
 
 ## Behavior
 
@@ -65,11 +66,11 @@ To install:
 2. Copy `tpm123.service` to `/etc/systemd/system/`
 3. Enable the service:
 
-```#> systemctl daemon-reexec
-#> systemctl enable tpm123.service
+```#> systemctl enable tpm123.service
+#> systemctl start tpm123
 ```
 
-4. Reboot or run the service to create/unseal blobs.
+4. Reboot or run the service to create/unseal blobs that you `touch` under `/etc/blobs/`.
 
 ## Security Notes
 
