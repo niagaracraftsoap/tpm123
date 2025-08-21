@@ -1,27 +1,11 @@
 [Unit]
-Description=TPM 1-2-3, Easily create and unseal TPM 1.2 blobs to per-user /run/<user>/env and .env files.
-Documentation=https://github.com/niagaracraftsoap/tpm123
-ConditionPathIsDirectory=/etc/blobs
-
-# TPM and local dependencies
-Wants=dev-tpm0.device tcsd.service
-After=local-fs.target systemd-tmpfiles-setup.service dev-tpm0.device tcsd.service
-
-# Ensure secrets are present before user sessions begin
-Before=systemd-user-sessions.service
-
-DefaultDependencies=yes
+Description=TPM 1-2-3 — Unseal TPM 1.2 blobs at boot
+Wants=dev-tpm0.device
+After=local-fs.target dev-tpm0.device
 
 [Service]
 Type=oneshot
-Environment=PATH=/usr/bin:/bin
-
-# Main script
 ExecStart=/usr/local/sbin/tpm123
-
-StandardOutput=journal
-StandardError=inherit
-RemainAfterExit=yes
 
 [Install]
 WantedBy=multi-user.target
