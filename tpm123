@@ -1,0 +1,132 @@
+#!/bin/bash
+#
+# unseal-blobs.sh -- Securely unseal per-user TPM-sealed secrets into /run at boot.
+# This script is designed to run as a systemd service. It reads TPM-sealed blobs from /etc/blobs,
+# unseals them, and writes them to two files per user:
+#
+#   - /run/<user>/env     : systemd EnvironmentFile-compatible (KEY='value')
+#   - /run/<user>/.env    : shell source-compatible (export KEY='value')
+#
+# The result is a boot-time unsealed, RAM-only secret, hardware-bound to the TPM.
+
+
+set -euo pipefail  # Safe shell: exit on errors, undefined vars, and failed pipelines
+
+readonly BLOB_DIR="/etc/blobs"     # Where TPM-sealed blob files are stored
+readonly TMPFS_BASE="/run"         # Volatile runtime memory filesystem
+readonly SIZE_BYTES=256            # Size (in bytes) of entropy to generate if blob missing
+
+# Declare associative arrays for tracking per-user temp files and directories
+declare -A ENV_TMP        # user -> temp path for env
+declare -A DOTENV_TMP     # user -> temp path for .env
+declare -A USER_DIRS      # user -> /run/<user>
+declare -A USER_HAD_DATA  # user -> 1 if at least one kv was written
+
+# Clean up temp files on exit, whether the script succeeds or fails
+cleanup() {
+  for user in "${!ENV_TMP[@]}"; do
+    [[ -n "${ENV_TMP[$user]:-}" && -f "${ENV_TMP[$user]}" ]] && rm -f -- "${ENV_TMP[$user]}" || true
+  done
+  for user in "${!DOTENV_TMP[@]}"; do
+    [[ -n "${DOTENV_TMP[$user]:-}" && -f "${DOTENV_TMP[$user]}" ]] && rm -f -- "${DOTENV_TMP[$user]}" || true
+  done
+}
+trap cleanup EXIT  # Register cleanup to always run
+
+# Create a secure temp file in the user's target directory (so atomic rename works later)
+get_tmp_file() {
+  local user="$1" kind="$2"
+  mktemp -p "${USER_DIRS[$user]}" ".${kind}.XXXXXX"
+}
+
+# Normalize key names: uppercase, alphanumeric/underscore only, must start with letter or _
+sanitize_key() {
+  local raw="$1" up
+  up="${raw^^}"
+  up="${up//[^A-Za-z0-9_]/_}"
+  [[ "$up" =~ ^[A-Z_] ]] || up="_$up"
+  printf "%s" "$up"
+}
+
+# Quote value safely for shell or systemd compatibility
+sh_single_quote() {
+  local val="$1"
+  printf "'%s'" "$(printf "%s" "$val" | sed "s/'/'\\''/g")"
+}
+
+# Ensure per-user /run/<user> directory and temp files are ready
+ensure_user_context() {
+  local user="$1"
+  if [[ -z "${USER_DIRS[$user]+x}" ]]; then
+    local user_dir="$TMPFS_BASE/$user"
+    install -o "$user" -g "$user" -m 700 -d "$user_dir"
+    USER_DIRS["$user"]="$user_dir"
+
+    ENV_TMP["$user"]="$(get_tmp_file "$user" "env")"
+    DOTENV_TMP["$user"]="$(get_tmp_file "$user" "dotenv")"
+
+    chmod 600 "${ENV_TMP[$user]}" "${DOTENV_TMP[$user]}"
+    chown "$user:$user" "${ENV_TMP[$user]}" "${DOTENV_TMP[$user]}"
+  fi
+}
+
+# Process all .blob files in /etc/blobs
+shopt -s nullglob
+for blob in "$BLOB_DIR"/*.blob; do
+  filename=$(basename "$blob")
+  base="${filename%.blob}"
+
+  user="${base%%_*}"
+  label="${base#*_}"
+
+  # Skip blobs for non-existent users
+  if ! id -u "$user" >/dev/null 2>&1; then
+    echo "Skipping $blob: user '$user' does not exist" >&2
+    continue
+  fi
+
+  ensure_user_context "$user"
+
+  # If blob is missing or empty, create it with 256 bytes of base64 entropy (newline-stripped)
+  if [ ! -s "$blob" ]; then
+    echo "Blob $blob missing or empty — creating..."
+    head -c "$SIZE_BYTES" /dev/urandom | base64 --wrap=0 | tr -d '\n' | \
+      tpm_sealdata -z -o "$blob"
+    chmod 600 "$blob"
+    chown root:root "$blob"
+  fi
+
+  # Unseal and sanitize the value (strip newline if present)
+  value="$(tpm_unsealdata -z -i "$blob" | tr -d '\n')"
+  key="$(sanitize_key "$label")"
+  quoted="$(sh_single_quote "$value")"
+
+  # Append key-value to temp files (env and dotenv format)
+  printf "%s=%s\n" "$key" "$quoted" >> "${ENV_TMP[$user]}"
+  printf "export %s=%s\n" "$key" "$quoted" >> "${DOTENV_TMP[$user]}"
+
+  USER_HAD_DATA["$user"]=1
+done
+
+# Finalize the per-user output files
+for user in "${!USER_DIRS[@]}"; do
+  if [[ -z "${USER_HAD_DATA[$user]:-}" ]]; then
+    # No data? Don't leave junk files.
+    rm -f -- "${ENV_TMP[$user]}" "${DOTENV_TMP[$user]}"
+    unset ENV_TMP["$user"] DOTENV_TMP["$user"]
+    continue
+  fi
+
+  user_dir="${USER_DIRS[$user]}"
+  env_final="$user_dir/env"
+  dotenv_final="$user_dir/.env"
+
+  # Atomically rename, lock down permissions, assign ownership
+  mv -f -- "${ENV_TMP[$user]}" "$env_final"
+  mv -f -- "${DOTENV_TMP[$user]}" "$dotenv_final"
+  chmod 400 "$env_final" "$dotenv_final"
+  chown "$user:$user" "$env_final" "$dotenv_final"
+
+  unset ENV_TMP["$user"] DOTENV_TMP["$user"]
+  echo "Wrote $env_final and $dotenv_final"
+done
