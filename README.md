@@ -13,6 +13,18 @@ Secrets are managed as sealed blobs stored in `/etc/blobs/`, and are only made a
   - `/run/<user>/.env` – for shell or development sourcing
 - Both files are owned by the user and stored in tmpfs (`/run`), not persisted across reboots.
 
+- ## Use Cases
+
+`tpm123` is intended for systems where persistent secrets are undesirable or unsafe, and where TPM 1.2 is available but underutilized. Example scenarios:
+
+- Embedded or industrial Linux systems where full disk encryption is overkill, but runtime secrets are still required
+- Long-lived servers or appliances with TPM 1.2 hardware and no TPM 2.0 upgrade path
+- Air-gapped or offline systems where injecting secrets at runtime is impractical
+- Development environments where secrets should exist only in memory and never touch disk
+- Use with systemd units that require per-user secrets available early in the boot process
+
+The tool is designed to be minimal, composable, and safe by default — secrets are hardware-bound, never written to disk in plaintext, and discarded at reboot.
+
 ## Blob File Format
 
 Blob files must be located in `/etc/blobs/` and named with the following pattern:
