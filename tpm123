@@ -1,8 +1,8 @@
 #!/bin/bash
 #
-# unseal-blobs.sh -- Securely unseal per-user TPM-sealed secrets into /run at boot.
+# tpm123.sh -- Securely unseal per-user TPM-sealed secrets into /run at boot.
 # This script is designed to run as a systemd service. It reads TPM-sealed blobs from /etc/blobs,
-# unseals them, and writes them to two files per user:
+# creates (256 bytes) and/or unseals them, and writes them to two files per user:
 #
 #   - /run/<user>/env     : systemd EnvironmentFile-compatible (KEY='value')
 #   - /run/<user>/.env    : shell source-compatible (export KEY='value')
