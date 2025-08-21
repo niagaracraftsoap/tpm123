@@ -15,7 +15,9 @@ Secrets are managed as sealed blobs stored in `/etc/blobs/`, and are only made a
 
 ## Use Cases
 
-`tpm123` is intended for systems where persistent secrets are undesirable or unsafe, and where TPM 1.2 is available but underutilized. Example scenarios:
+`tpm123` is intended for systems where storing secrets on disk (persistently) poses a risk — whether due to security constraints, threat models, or compliance goals, and where TPM 1.2 is available.
+
+Example scenarios:
 
 - Embedded or industrial Linux systems where full disk encryption is overkill, but runtime secrets are still required
 - Long-lived servers or appliances with TPM 1.2 hardware and no TPM 2.0 upgrade path
