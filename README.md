@@ -75,7 +75,3 @@ To install:
 ## License
 
 MIT
-
----
-
-For more information, see the source script or open an issue.
