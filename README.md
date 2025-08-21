@@ -48,11 +48,11 @@ It is intended to run early at boot, before user services that may depend on the
 To install:
 
 1. Copy `tpm123` to `/usr/local/sbin/`
-2. Copy `tpm123-unseal.service` to `/etc/systemd/system/`
+2. Copy `tpm123.service` to `/etc/systemd/system/`
 3. Enable the service:
 
 ```#> systemctl daemon-reexec
-#> systemctl enable tpm123-unseal.service
+#> systemctl enable tpm123.service
 ```
 
 4. Reboot or run the service to create/unseal blobs.
