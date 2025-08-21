@@ -20,7 +20,7 @@ Environment=PATH=/usr/bin:/bin
 ExecStartPre=/usr/bin/install -d -m 0711 -o root -g root /run/unsealed
 
 # Main script
-ExecStart=/usr/local/sbin/unseal-blobs
+ExecStart=/usr/local/sbin/tpm123
 
 StandardOutput=journal
 StandardError=inherit
