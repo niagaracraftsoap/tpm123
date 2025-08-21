@@ -41,7 +41,7 @@ export MY_SECRET='base64encodedvalue'
 
 ## Systemd Integration
 
-A sample systemd unit file is included: `tpm123-unseal.service`.
+A sample systemd unit file is included: `tpm123.service`.
 
 It is intended to run early at boot, before user services that may depend on the unsealed secrets.
 
