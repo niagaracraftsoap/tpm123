@@ -71,11 +71,10 @@ To install:
 #> systemctl start tpm123
 ```
 
-4. Reboot or run the service to create/unseal blobs that you `touch` under `/etc/blobs/`.
-
 ## Security Notes
 
 - All secrets are sealed to the TPM and unsealed only under correct system state (PCR-bound if configured).
+- Custom secret values can be created using tpm_sealdata, writing the blob to `/etc/blobs/` with the appropriate nomenclature, and will be automatically unsealed at boot like any other.
 - Secrets are never written to disk unencrypted.
 - Secrets exist only in `/run`, which is cleared on reboot.
 - Output files are `chmod 400` and `chown <user>:<user>` by default.
