@@ -66,7 +66,8 @@ To install:
 2. Copy `tpm123.service` to `/etc/systemd/system/`
 3. Enable the service:
 
-```#> systemctl enable tpm123.service
+```
+#> systemctl enable tpm123.service
 #> systemctl start tpm123
 ```
 
