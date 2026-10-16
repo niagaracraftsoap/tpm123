@@ -2,9 +2,9 @@
 #
 # tpm123.sh -- Securely unseal per-user TPM-sealed secrets into /run at boot.
 # This script is designed to run as a systemd service. It reads TPM-sealed blobs from /etc/blobs,
-# creates (256 bytes) and/or unseals them, and writes them to two files per user:
+# generates a random secret for each empty blob, unseals blobs, and writes two files per user:
 #
-#   - /run/<user>/env     : systemd EnvironmentFile-compatible (KEY='value')
+#   - /run/<user>/env     : systemd EnvironmentFile-compatible (KEY="value")
 #   - /run/<user>/.env    : shell source-compatible (export KEY='value')
 #
 # The result is a boot-time unsealed, RAM-only secret, hardware-bound to the TPM.
@@ -14,7 +14,8 @@ set -euo pipefail  # Safe shell: exit on errors, undefined vars, and failed pipe
 
 readonly BLOB_DIR="/etc/blobs"     # Where TPM-sealed blob files are stored
 readonly TMPFS_BASE="/run"         # Volatile runtime memory filesystem
-readonly SIZE_BYTES=256            # Size (in bytes) of entropy to generate if blob missing
+readonly SIZE_BYTES=256
+SEALED_TMP=""
 
 # Declare associative arrays for tracking per-user temp files and directories
 declare -A ENV_TMP        # user -> temp path for env
@@ -24,6 +25,7 @@ declare -A USER_HAD_DATA  # user -> 1 if at least one kv was written
 
 # Clean up temp files on exit, whether the script succeeds or fails
 cleanup() {
+  [[ -z "$SEALED_TMP" ]] || rm -f -- "$SEALED_TMP"
   for user in "${!ENV_TMP[@]}"; do
     [[ -n "${ENV_TMP[$user]:-}" && -f "${ENV_TMP[$user]}" ]] && rm -f -- "${ENV_TMP[$user]}" || true
   done
@@ -48,10 +50,18 @@ sanitize_key() {
   printf "%s" "$up"
 }
 
-# Quote value safely for shell or systemd compatibility
+# Shell single quotes and systemd EnvironmentFile quotes have different grammars.
 sh_single_quote() {
   local val="$1"
-  printf "'%s'" "$(printf "%s" "$val" | sed "s/'/'\\''/g")"
+  val="${val//\'/\'\\\'\'}"
+  printf "'%s'" "$val"
+}
+
+systemd_quote() {
+  local val="$1"
+  val="${val//\\/\\\\}"
+  val="${val//\"/\\\"}"
+  printf '"%s"' "$val"
 }
 
 # Ensure per-user /run/<user> directory and temp files are ready
@@ -76,6 +86,11 @@ for blob in "$BLOB_DIR"/*.blob; do
   filename=$(basename "$blob")
   base="${filename%.blob}"
 
+  if [[ "$base" != *_* || -z "${base%%_*}" || -z "${base#*_}" ]]; then
+    printf 'Invalid blob filename: %s\n' "$blob" >&2
+    exit 1
+  fi
+
   user="${base%%_*}"
   label="${base#*_}"
 
@@ -87,23 +102,46 @@ for blob in "$BLOB_DIR"/*.blob; do
 
   ensure_user_context "$user"
 
-  # If blob is missing or empty, create it with 256 bytes of base64 entropy (newline-stripped)
-  if [ ! -s "$blob" ]; then
-    echo "Blob $blob missing or empty — creating..."
-    head -c "$SIZE_BYTES" /dev/urandom | base64 --wrap=0 | tr -d '\n' | \
-      tpm_sealdata -z -o "$blob"
-    chmod 600 "$blob"
-    chown root:root "$blob"
+  if [[ ! -f "$blob" ]]; then
+    printf 'Refusing non-regular blob: %s\n' "$blob" >&2
+    exit 1
   fi
 
-  # Unseal and sanitize the value (strip newline if present)
-  value="$(tpm_unsealdata -z -i "$blob" | tr -d '\n')"
-  key="$(sanitize_key "$label")"
-  quoted="$(sh_single_quote "$value")"
+  # An empty blob is an explicit request for a new random secret, including at boot.
+  if [[ ! -s "$blob" ]]; then
+    printf 'Creating random secret for %s\n' "$blob"
+    SEALED_TMP="$(mktemp -p "$BLOB_DIR" .sealed.XXXXXX)"
+    # Plaintext stays in the pipe. A failed seal leaves the empty request intact.
+    if head -c "$SIZE_BYTES" /dev/urandom | base64 --wrap=0 | \
+        tpm_sealdata -z -o "$SEALED_TMP"; then
+      :
+    else
+      status=$?
+      printf 'Sealing failed for %s (exit %d)\n' "$blob" "$status" >&2
+      exit "$status"
+    fi
+    if [[ ! -s "$SEALED_TMP" ]]; then
+      printf 'Sealing produced an empty blob for %s\n' "$blob" >&2
+      exit 1
+    fi
+    chmod 600 "$SEALED_TMP"
+    chown root:root "$SEALED_TMP"
+    mv -f -- "$SEALED_TMP" "$blob"
+    SEALED_TMP=""
+  fi
 
-  # Append key-value to temp files (env and dotenv format)
-  printf "%s=%s\n" "$key" "$quoted" >> "${ENV_TMP[$user]}"
-  printf "export %s=%s\n" "$key" "$quoted" >> "${DOTENV_TMP[$user]}"
+  # Preserve the historical newline-stripping behavior. Report failures without values.
+  if value="$(tpm_unsealdata -z -i "$blob" | tr -d '\n')"; then
+    :
+  else
+    status=$?
+    printf 'Unseal failed for %s (exit %d)\n' "$blob" "$status" >&2
+    exit "$status"
+  fi
+  key="$(sanitize_key "$label")"
+
+  printf "%s=%s\n" "$key" "$(systemd_quote "$value")" >> "${ENV_TMP[$user]}"
+  printf "export %s=%s\n" "$key" "$(sh_single_quote "$value")" >> "${DOTENV_TMP[$user]}"
 
   USER_HAD_DATA["$user"]=1
 done
